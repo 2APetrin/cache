@@ -5,157 +5,112 @@
 #include <unordered_map>
 #include <iostream>
 
-#define ERR_TEST(str)                 \
-{                                      \
-    printf(str);                        \
-    printf(", Found -%c-\n", buff[pos]); \
-    delete[] buff;                        \
-    return 1;                              \
-}
-
 int slow_get_page_int(int key);
 
 namespace caches {
 
 template <typename T, typename KeyT = int>
-struct cache_t
+class cache_t
 {
     size_t sz_;
-    size_t min_fr_;
-    std::list<std::tuple<KeyT, T, size_t>> cache_;
+    size_t elem_amount_;
 
-    using ListIt = typename std::list<std::tuple<KeyT, T, size_t>>::iterator;
-    std::unordered_map<KeyT, ListIt> hash_;
+    struct freq_node_t;
+    using  freq_list_it = typename std::list<freq_node_t>::iterator;
 
-    cache_t(size_t sz) : sz_(sz), min_fr_(1) {}
-
-    bool full() const { return (cache_.size() == sz_); }
-
-    void find_min_fr(ListIt beg, ListIt end)
+    struct data_node_t
     {
-        min_fr_ = std::get<2>(*beg);
-        for (ListIt it = ++beg; it != end; it++)
-            if (std::get<2>(*it) < min_fr_) min_fr_ = std::get<2>(*it);
-    }
+        KeyT         key;
+        T            data;
+        freq_list_it freq_it;
+    };
 
-    void print_list(ListIt beg, ListIt end)
+    using data_list_it = typename std::list<data_node_t>::iterator;
+
+    struct freq_node_t
     {
-        for (ListIt it = beg; it != end; it++)
-            printf("%d-%lu ", std::get<1>(*it), std::get<2>(*it));
+        size_t                 freq;
+        std::list<data_node_t> data_list;
+    };
+
+    std::list<freq_node_t> frequency_list_;
+    std::unordered_map<KeyT, data_list_it> hash_;
+
+    bool full() const { return (elem_amount_ == sz_); }
+
+    void print_list(freq_list_it beg, freq_list_it end)
+    {
+        for (auto it = beg; it != end; it++)
+        {
+            std::cout << "\n" << it->freq << ") ";
+            for (auto dit = it->data_list.begin(); dit != it->data_list.end(); dit++)
+                std::cout << dit->data << "-";
+        }
         printf("\n");
     }
+
+    void delete_min_elem()
+    {
+        elem_amount_--;
+        hash_.erase(frequency_list_.begin()->data_list.begin()->key);
+        frequency_list_.begin()->data_list.erase(frequency_list_.begin()->data_list.begin());
+
+        if (frequency_list_.begin()->data_list.empty())
+            frequency_list_.erase(frequency_list_.begin());
+    }
+
+    void push_new_elem(KeyT key, T data)
+    {
+        if (frequency_list_.begin()->freq != 1)
+            frequency_list_.emplace_front(1);
+
+        elem_amount_++;
+        frequency_list_.begin()->data_list.emplace_back(key, data, frequency_list_.begin());
+        hash_.emplace(key, std::prev(frequency_list_.begin()->data_list.end()));
+    }
+
+    bool elem_to_next_frequency(data_list_it elem)
+    {
+        if (elem->freq_it == std::prev(frequency_list_.end()))
+        {
+            frequency_list_.emplace_back(elem->freq_it->freq + 1);
+            elem->freq_it->data_list.splice(std::prev(frequency_list_.end())->data_list.begin(), std::prev(frequency_list_.end())->data_list, elem);
+            elem->freq_it = std::next(elem->freq_it);
+
+            return true;
+        }
+
+        if (elem->freq_it->freq + 1 != std::next(elem->freq_it)->freq)
+            frequency_list_.emplace(std::next(elem->freq_it), elem->freq_it->freq + 1);
+
+        std::next(elem->freq_it)->data_list.splice(std::next(elem->freq_it)->data_list.end(), elem->freq_it->data_list, elem);
+        elem->freq_it = std::next(elem->freq_it);
+
+        if (frequency_list_.begin()->data_list.empty())
+            frequency_list_.erase(frequency_list_.begin());
+
+        return true;
+    }
+
+    public:
+    cache_t(size_t sz) : sz_(sz), elem_amount_(0) {}
 
     template <typename F>
     bool lookup_update(KeyT key, F slow_get_page)
     {
-        //print_list(cache_.begin(), cache_.end());
+        //print_list(frequency_list_.begin(), frequency_list_.end());
         auto hit = hash_.find(key);
+
         if (hit == hash_.end())
         {
-            if (full())
-            {
-                ListIt it = --cache_.end();
-                for (; it != --cache_.begin(); it--)
-                {
-                    if (std::get<2>(*it) == min_fr_) break;
-                }
+            if (full()) delete_min_elem();
 
-                hash_.erase(std::get<0>(*it));
-                cache_.erase(it);
-            }
-            cache_.emplace_front(key, slow_get_page(key), 1);
-            hash_.emplace(key, cache_.begin());
-            find_min_fr(cache_.begin(), cache_.end());
-
-            //print_list(cache_.begin(), cache_.end());
-            //printf("\n");
+            push_new_elem(key, slow_get_page(key));
 
             return false;
         }
 
-        auto eltit = hit->second;
-        std::get<2>(*eltit)++;
-        find_min_fr(cache_.begin(), cache_.end());
-
-        //print_list(cache_.begin(), cache_.end());
-        //printf("\n");
-
-        return true;
-    }
-
-
-    std::list<std::pair<KeyT, T>> ideal_cache_;
-    using IdListIt = typename std::list<std::pair<KeyT, T>>::iterator;
-    std::unordered_map<KeyT, IdListIt> ideal_hash_;
-
-    bool id_full() const { return (ideal_cache_.size() == sz_+1); }
-
-    void ideal_print_list(IdListIt beg, IdListIt end)
-    {
-        for (IdListIt it = beg; it != end; it++)
-            printf("-%d-", std::get<1>(*it));
-        printf("\n");
-    }
-
-    template <typename F>
-    bool ideal_lookup_update(KeyT key, F slow_get_page, T* arr, size_t len, int pos)
-    {
-        //ideal_print_list(ideal_cache_.begin(), ideal_cache_.end());
-        auto hit = ideal_hash_.find(key);
-        if (hit == ideal_hash_.end())
-        {
-            ideal_cache_.emplace_front(key, slow_get_page(key));
-            ideal_hash_.emplace(key, ideal_cache_.begin());
-
-            //ideal_print_list(ideal_cache_.begin(), ideal_cache_.end());
-
-            if (id_full())
-            {
-                //printf("full\n");
-                IdListIt it = ideal_cache_.begin();
-                IdListIt last_elem = it;
-                int last_pos = pos;
-
-                for (; it != ideal_cache_.end(); it++)
-                {
-                    int flag = 0;
-                    for (int i = pos; i < (int)len; i++)
-                    {
-                        if (std::get<1>(*it) == arr[i])
-                        {
-                            flag++;
-                            if (i > last_pos)
-                            {
-                                last_elem = it;
-                                last_pos = i;
-                            }
-                            break;
-                        }
-                    }
-                    if (!flag)
-                    {
-                        last_pos = (int)len;
-                        last_elem = it;
-                        //printf("no elem in the future - %d\n", std::get<1>(*it));
-                        break;
-                    }
-                }
-
-                ideal_hash_.erase(std::get<0>(*last_elem));
-                ideal_cache_.erase(last_elem);
-                //printf("\n");
-                return false;
-            }
-
-            //printf("\n");
-            return false;
-        }
-
-        //printf("hit\n");
-        //ideal_print_list(ideal_cache_.begin(), ideal_cache_.end());
-        //printf("\n");
-
-        return true;
+        return elem_to_next_frequency(hit->second);
     }
 };
 
