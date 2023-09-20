@@ -5,7 +5,13 @@
 #include <unordered_map>
 #include <iostream>
 
+// ---------------- DSL ----------------
+#define FIRST_DATA_LIST frequency_list_.begin()->data_list
+// ---------------- DSL ----------------
+
+
 int slow_get_page_int(int key);
+
 
 namespace caches {
 
@@ -52,10 +58,10 @@ class cache_t
     void delete_min_elem()
     {
         elem_amount_--;
-        hash_.erase(frequency_list_.begin()->data_list.begin()->key);
-        frequency_list_.begin()->data_list.erase(frequency_list_.begin()->data_list.begin());
+        hash_.erase(FIRST_DATA_LIST.begin()->key);
+        FIRST_DATA_LIST.erase(FIRST_DATA_LIST.begin());
 
-        if (frequency_list_.begin()->data_list.empty())
+        if (FIRST_DATA_LIST.empty())
             frequency_list_.erase(frequency_list_.begin());
     }
 
@@ -65,8 +71,8 @@ class cache_t
             frequency_list_.emplace_front(1);
 
         elem_amount_++;
-        frequency_list_.begin()->data_list.emplace_back(key, data, frequency_list_.begin());
-        hash_.emplace(key, std::prev(frequency_list_.begin()->data_list.end()));
+        FIRST_DATA_LIST.emplace_back(key, data, frequency_list_.begin());
+        hash_.emplace(key, std::prev(FIRST_DATA_LIST.end()));
     }
 
     bool elem_to_next_frequency(data_list_it elem)
@@ -86,7 +92,7 @@ class cache_t
         std::next(elem->freq_it)->data_list.splice(std::next(elem->freq_it)->data_list.end(), elem->freq_it->data_list, elem);
         elem->freq_it = std::next(elem->freq_it);
 
-        if (frequency_list_.begin()->data_list.empty())
+        if (FIRST_DATA_LIST.empty())
             frequency_list_.erase(frequency_list_.begin());
 
         return true;
