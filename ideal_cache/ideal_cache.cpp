@@ -18,8 +18,18 @@ int main()
     }
 
     ideal_caches::ideal_cache_t <int> csh{(size_t)cache_l, (size_t)elem_num};
+    std::vector<int> data_arr;
+    data_arr.reserve(elem_num);
 
-    csh.get_data();
+    for (int i = 0; i < (int)elem_num; i++)
+        std::cin >> data_arr[i];
+
+    if (!csh.get_data(data_arr, elem_num))
+    {
+        std::cout << "BAD number of elements in get data " << elem_num << std::endl;
+        return 1;
+    }
+
     csh.ideal_data_init(slow_get_page_int);
 
     int hit_cnt = 0;
